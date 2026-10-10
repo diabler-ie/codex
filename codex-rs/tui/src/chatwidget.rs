@@ -1210,6 +1210,10 @@ impl ChatWidget {
                 .is_some_and(|cell| !cell.is_active())
                 || cell
                     .as_any()
+                    .downcast_ref::<history_cell::McpToolCallGroupCell>()
+                    .is_some_and(|cell| !cell.is_active())
+                || cell
+                    .as_any()
                     .downcast_ref::<history_cell::ComputerActivityCell>()
                     .is_some_and(|cell| !cell.is_active())
         })
@@ -1442,6 +1446,11 @@ impl ChatWidget {
                 .downcast_mut::<history_cell::ComputerActivityCell>()
             {
                 computer.mark_failed();
+            } else if let Some(group) = cell
+                .as_any_mut()
+                .downcast_mut::<history_cell::McpToolCallGroupCell>()
+            {
+                group.mark_failed();
             }
             self.add_boxed_history(cell);
             self.request_pending_usage_output_insertion();
@@ -1814,6 +1823,11 @@ impl ChatWidget {
                 exec.freeze_snapshot();
             } else if let Some(tool) = cell.as_any_mut().downcast_mut::<McpToolCallCell>() {
                 tool.freeze_snapshot();
+            } else if let Some(group) = cell
+                .as_any_mut()
+                .downcast_mut::<history_cell::McpToolCallGroupCell>()
+            {
+                group.freeze_snapshot();
             }
         }
         self.bottom_pane

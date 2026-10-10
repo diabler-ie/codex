@@ -48,6 +48,7 @@ pub(super) struct TextLayout {
     width: u16,
     pub(super) separated: bool,
     pub(super) disclosure: bool,
+    pub(super) mcp_group: bool,
     disclosure_control: Option<DisclosureControl>,
 }
 
@@ -133,6 +134,8 @@ impl TextLayout {
     /// Reflow the same displayed content revision, retaining styles, links and disclosure label.
     pub(super) fn rewrap(&self, width: u16) -> Self {
         let mut layout = Self::from_logical(self.logical.clone(), width);
+        layout.disclosure = self.disclosure;
+        layout.mcp_group = self.mcp_group;
         if let Some(control) = &self.disclosure_control {
             layout =
                 layout.with_disclosure_control_at(control.label.clone(), control.source_offset);
@@ -454,6 +457,7 @@ impl TextLayout {
             width,
             separated: false,
             disclosure: false,
+            mcp_group: false,
             disclosure_control: None,
         }
     }

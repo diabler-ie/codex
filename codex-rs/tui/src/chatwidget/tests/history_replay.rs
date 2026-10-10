@@ -1348,6 +1348,8 @@ async fn replayed_mcp_tool_call_stays_active_until_completion() {
         *status = codex_app_server_protocol::McpToolCallStatus::Completed;
     }
     chat.on_mcp_tool_call_completed(item);
+    assert!(chat.transcript.active_cell.is_some());
+    chat.flush_active_cell();
     assert!(chat.transcript.active_cell.is_none());
     let completed = drain_insert_history(&mut rx);
     assert_eq!(completed.len(), 1);
@@ -1478,6 +1480,7 @@ async fn deferred_mcp_lifecycle_events_keep_fifo_after_stream_finishes() {
     chat.flush_interrupt_queue();
 
     assert!(chat.interrupts.is_empty());
+    chat.flush_active_cell();
     assert!(chat.transcript.active_cell.is_none());
     let rendered = drain_insert_history(&mut rx)
         .into_iter()

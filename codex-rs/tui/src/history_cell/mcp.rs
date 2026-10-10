@@ -18,6 +18,10 @@ mod preview;
 mod computer_activity;
 pub(crate) use computer_activity::ComputerActivityCell;
 
+#[path = "mcp_group.rs"]
+mod mcp_group;
+pub(crate) use mcp_group::McpToolCallGroupCell;
+
 use crate::style::StatusTone;
 use crate::style::accent_color;
 use crate::style::accent_style;

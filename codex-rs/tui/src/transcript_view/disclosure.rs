@@ -8,6 +8,7 @@ use crate::bottom_pane::TranscriptFooter;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::ListAction;
 use crate::keymap::RuntimeKeymap;
+use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
@@ -39,6 +40,62 @@ impl Disclosure {
 }
 
 impl TranscriptView {
+    /// Ctrl+Y belongs to the transcript while browsing or focusing activity. At the live
+    /// composer it remains the editor's yank binding, including when the composer is empty.
+    pub(crate) fn owns_tool_call_toggle(&self, key: KeyEvent) -> bool {
+        !self.detailed
+            && self.mode == HistoryRenderMode::Rich
+            && self.selection.is_none()
+            && !self.search.is_active()
+            && (self.is_activity_focused() || !self.is_following())
+            && crate::key_hint::ctrl(KeyCode::Char('y')).is_press(key)
+    }
+
+    fn toggle_visible_tool_calls(&mut self, cells: &[Arc<dyn HistoryCell>]) -> bool {
+        let mut indices = Vec::new();
+        for row in &self.visible {
+            let Some(index) = self.canonical_activity_index(cells, &row.activity_ids) else {
+                continue;
+            };
+            let grouped = cells.get(index).map_or(
+                self.live.as_ref().is_some_and(|layout| layout.mcp_group),
+                |cell| {
+                    cell.as_any()
+                        .downcast_ref::<crate::history_cell::McpToolCallGroupCell>()
+                        .is_some_and(crate::history_cell::McpToolCallGroupCell::is_grouped)
+                },
+            );
+            if grouped && !indices.contains(&index) {
+                indices.push(index);
+            }
+        }
+        if indices.is_empty() {
+            return false;
+        }
+        let expand = indices.iter().any(|&index| {
+            !self
+                .disclosure
+                .is_expanded(&self.activity_ids(cells, index))
+        });
+        let following = self.is_following();
+        for index in indices {
+            if self
+                .disclosure
+                .is_expanded(&self.activity_ids(cells, index))
+                != expand
+            {
+                self.toggle_activity(cells, index);
+            }
+        }
+        if following {
+            // A bulk toggle at the live tail should keep receiving call completions. Readers
+            // who already scrolled away retain the normal paused transcript behavior.
+            self.position = Position::Latest;
+            self.release_live_reading();
+        }
+        true
+    }
+
     pub(crate) fn is_activity_focused(&self) -> bool {
         self.disclosure.focused.is_some() && !self.detailed && self.mode == HistoryRenderMode::Rich
     }
@@ -148,10 +205,14 @@ impl TranscriptView {
         else {
             return false;
         };
-        if visible.layout.disclosure_row() != Some(visible.row)
-            || column
-                .checked_sub(self.area.x)
-                .is_none_or(|column| !visible.layout.disclosure_columns().contains(&column))
+        let header_target = visible.layout.disclosure
+            && visible.layout.disclosure_row().is_none()
+            && visible.row == usize::from(visible.layout.separated);
+        if !header_target
+            && (visible.layout.disclosure_row() != Some(visible.row)
+                || column
+                    .checked_sub(self.area.x)
+                    .is_none_or(|column| !visible.layout.disclosure_columns().contains(&column)))
         {
             return false;
         }
@@ -169,6 +230,9 @@ impl TranscriptView {
     ) -> Option<ViewAction> {
         if self.detailed || self.mode != HistoryRenderMode::Rich || self.is_search_editing() {
             return None;
+        }
+        if self.owns_tool_call_toggle(key) && self.toggle_visible_tool_calls(cells) {
+            return Some(ViewAction::Changed);
         }
         if self.disclosure.keymap.app.focus_activity.is_pressed(key) {
             if self.is_activity_focused() {
@@ -376,7 +440,7 @@ impl TranscriptView {
             return None;
         }
         let keymap = &self.disclosure.keymap;
-        let hints: Vec<_> = [
+        let mut hints: Vec<_> = [
             (ListAction::MoveUp, "previous"),
             (ListAction::MoveDown, "next"),
             (ListAction::Accept, "details"),
@@ -391,6 +455,12 @@ impl TranscriptView {
             })
         })
         .collect();
+        if self.visible.iter().any(|row| row.layout.mcp_group) {
+            hints.insert(
+                hints.len().saturating_sub(1),
+                Line::from("ctrl+y tool calls".dim()),
+            );
+        }
         // Drop navigation before the details/back controls, retaining whole remapped chords.
         let text = crate::footer_hint::first_fitting_line(
             (0..hints.len()).map(|start| {

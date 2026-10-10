@@ -10,9 +10,7 @@ use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCell;
 use crate::exec_cell::new_active_exec_command;
 use crate::history_cell::McpInvocation;
-use crate::history_cell::McpToolCallCell;
 use crate::history_cell::PlainHistoryCell;
-use crate::history_cell::new_active_mcp_tool_call;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionSource;
@@ -233,13 +231,6 @@ impl McpHistory {
             duration: Duration::from_millis(duration_ms.unwrap_or_default().max(/*other*/ 0) as u64),
             result,
         })
-    }
-
-    pub(crate) fn into_cell(self) -> McpToolCallCell {
-        let mut cell =
-            new_active_mcp_tool_call(self.id, self.invocation, /*animations_enabled*/ false);
-        cell.complete(self.duration, self.result);
-        cell
     }
 }
 

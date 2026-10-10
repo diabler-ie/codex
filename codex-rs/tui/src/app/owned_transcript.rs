@@ -523,6 +523,7 @@ impl App {
             && self.transcript_view.can_return_to_latest();
         if let TuiEvent::Key(key) = event
             && !self.transcript_view.has_active_interaction()
+            && !self.transcript_view.owns_tool_call_toggle(*key)
             && keymap_action_ids().any(|action| {
                 action.context != KeymapContext::Pager
                     && !matches!(action.action, "find_transcript" | "focus_activity")

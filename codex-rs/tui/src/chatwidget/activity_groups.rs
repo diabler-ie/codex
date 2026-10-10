@@ -37,6 +37,14 @@ impl ChatWidget {
             self.bump_active_cell_revision();
             return Ok(());
         }
+        if let Some(group) = active
+            .as_any_mut()
+            .downcast_mut::<history_cell::McpToolCallGroupCell>()
+        {
+            group.group.push_detail(Arc::from(cell));
+            self.bump_active_cell_revision();
+            return Ok(());
+        }
         Err(cell)
     }
 

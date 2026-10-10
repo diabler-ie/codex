@@ -14,6 +14,8 @@ mod follow_control;
 mod footer;
 mod input;
 mod layout;
+#[cfg(test)]
+mod mcp_group_tests;
 mod mutations;
 mod prompt_header;
 mod search;

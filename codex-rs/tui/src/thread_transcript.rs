@@ -1,6 +1,6 @@
 //! Project persisted items into the same rich cells as completed live output.
 //! Tool grouping spans hidden reasoning but stops at visible content and turn boundaries.
-//! Only one computer or exploration group can be pending at a time.
+//! Only one MCP, computer, or exploration group can be pending at a time.
 
 use std::sync::Arc;
 
@@ -27,6 +27,7 @@ use ratatui::style::Stylize as _;
 mod activity_pages;
 mod computer_groups;
 mod exploration_groups;
+mod mcp_groups;
 mod other_items;
 pub(crate) mod tools;
 
@@ -40,11 +41,14 @@ pub(crate) use computer_groups::join_computer_groups;
 pub(crate) use computer_groups::older_computer_group;
 pub(crate) use exploration_groups::join_exploration_groups;
 pub(crate) use exploration_groups::older_exploration_group;
+pub(crate) use mcp_groups::join_mcp_groups;
+pub(crate) use mcp_groups::older_mcp_group;
 
 pub(crate) type TranscriptCells = Vec<Arc<dyn HistoryCell>>;
 
 enum PendingActivity {
     Computer(crate::history_cell::ComputerActivityCell),
+    Mcp(crate::history_cell::McpToolCallGroupCell),
     Exploration(crate::exec_cell::ExecCell),
 }
 
@@ -52,6 +56,7 @@ impl PendingActivity {
     fn flush(pending: &mut Option<Self>, cells: &mut TranscriptCells) {
         let cell: Arc<dyn HistoryCell> = match pending.take() {
             Some(Self::Computer(group)) => Arc::new(group),
+            Some(Self::Mcp(group)) => Arc::new(group),
             Some(Self::Exploration(group)) => Arc::new(group),
             None => return,
         };
@@ -145,6 +150,7 @@ pub(crate) fn thread_items_to_transcript_cells(
             ) {
                 match group {
                     PendingActivity::Computer(group) => group.group.push_detail(cell),
+                    PendingActivity::Mcp(group) => group.group.push_detail(cell),
                     PendingActivity::Exploration(group) => group.group.push_detail(cell),
                 }
             }
@@ -166,21 +172,29 @@ pub(crate) fn thread_items_to_transcript_cells(
                         Some(PendingActivity::Computer(group)) => {
                             computer_groups::append(group, call);
                         }
-                        Some(PendingActivity::Exploration(_)) | None => {
+                        Some(PendingActivity::Exploration(_))
+                        | Some(PendingActivity::Mcp(_))
+                        | None => {
                             PendingActivity::flush(&mut pending, &mut cells);
                             let mut group = crate::history_cell::ComputerActivityCell::default();
                             computer_groups::append(&mut group, call);
                             pending = Some(PendingActivity::Computer(group));
                         }
                     }
+                } else if let Some(PendingActivity::Mcp(group)) = &mut pending {
+                    mcp_groups::append(group, call);
                 } else {
                     PendingActivity::flush(&mut pending, &mut cells);
-                    let cell = call.into_cell();
-                    cells.push(Arc::new(cell));
+                    let mut group = crate::history_cell::McpToolCallGroupCell::default();
+                    mcp_groups::append(&mut group, call);
+                    pending = Some(PendingActivity::Mcp(group));
                 }
             }
             item @ ThreadItem::CommandExecution { .. } => {
-                if matches!(pending, Some(PendingActivity::Computer(_))) {
+                if matches!(
+                    pending,
+                    Some(PendingActivity::Computer(_) | PendingActivity::Mcp(_))
+                ) {
                     PendingActivity::flush(&mut pending, &mut cells);
                 }
                 if let Some(command) = tools::CommandHistory::from_item(item) {

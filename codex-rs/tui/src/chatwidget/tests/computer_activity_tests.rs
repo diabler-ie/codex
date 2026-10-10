@@ -138,10 +138,12 @@ async fn computer_activity_preserves_boundaries_and_expanded_output() {
     }
     chat.on_mcp_tool_call_completed(other);
     let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 2);
+    assert_eq!(cells.len(), 1);
     assert!(lines_to_single_string(&cells[0]).contains("Used computer · 1 action"));
-    assert!(lines_to_single_string(&cells[1]).contains("another_server"));
     chat.on_mcp_tool_call_completed(computer_item("3", McpToolCallStatus::Completed));
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1);
+    assert!(lines_to_single_string(&cells[0]).contains("another_server"));
     let transcript = chat.active_cell_transcript_lines(/*width*/ 100).unwrap();
     assert!(lines_to_single_string(&transcript).contains("Full output for 3"));
     assert!(lines_to_single_string(&transcript).contains("await cua.getState()"));

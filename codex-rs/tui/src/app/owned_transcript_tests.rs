@@ -1849,3 +1849,69 @@ async fn footer_selection_defers_warning_clicks_and_preserves_the_draft() -> Res
     tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }
+
+#[tokio::test]
+async fn grouped_mcp_shortcut_preserves_composer_yank_then_expands_chat() -> Result<()> {
+    let mut app = crate::app::test_support::make_test_app().await;
+    attach_thread(&mut app, ThreadId::new());
+    let items = ["first", "second"].map(|id| {
+        serde_json::from_value(serde_json::json!({
+            "type": "mcpToolCall", "id": id, "server": "Brusher", "tool": "get_page",
+            "status": "completed", "arguments": {"id": id},
+            "result": {"content": [{"type": "text", "text": format!("Full result {id}")}]},
+            "durationMs": 5
+        }))
+        .expect("MCP fixture")
+    });
+    app.transcript_cells = crate::thread_transcript::thread_items_to_transcript_cells(
+        None,
+        &app.config.cwd,
+        items,
+        crate::thread_transcript::RawReasoningVisibility::Hidden,
+        None,
+    );
+    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    tui.set_owned_screen(true)?;
+    tui.terminal.resize(Size::new(90, 24))?;
+    app.chat_widget
+        .apply_external_edit("keep this draft".into());
+    // Ctrl+U kills the draft. Ctrl+Y must still restore it into the empty composer.
+    for key in [
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+        KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+    ] {
+        app.handle_tui_event(&mut tui, &mut app_server, TuiEvent::Key(key))
+            .await?;
+    }
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "keep this draft"
+    );
+    app.render_owned_transcript(&mut tui, Size::new(90, 24))?;
+    let collapsed = buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
+        &tui.terminal,
+    ));
+    assert!(collapsed.contains("Called Brusher 2 times"));
+    assert!(!collapsed.contains("Full result"));
+    for key in [
+        KeyCode::F(4).into(),
+        KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+    ] {
+        app.handle_tui_event(&mut tui, &mut app_server, TuiEvent::Key(key))
+            .await?;
+    }
+    app.render_owned_transcript(&mut tui, Size::new(90, 24))?;
+    let expanded = buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
+        &tui.terminal,
+    ));
+    assert!(expanded.contains("Full result first"));
+    assert!(expanded.contains("Full result second"));
+    assert_eq!(
+        app.chat_widget.composer_text_with_pending(),
+        "keep this draft"
+    );
+    tui.set_owned_screen(false)?;
+    app_server.shutdown().await?;
+    Ok(())
+}

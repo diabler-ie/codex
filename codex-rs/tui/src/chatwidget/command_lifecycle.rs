@@ -400,6 +400,10 @@ impl ChatWidget {
                 None if cell.as_any().is::<McpToolCallCell>()
                     || cell
                         .as_any()
+                        .downcast_ref::<history_cell::McpToolCallGroupCell>()
+                        .is_some_and(history_cell::McpToolCallGroupCell::is_active)
+                    || cell
+                        .as_any()
                         .downcast_ref::<history_cell::ComputerActivityCell>()
                         .is_some_and(history_cell::ComputerActivityCell::is_active) =>
                 {

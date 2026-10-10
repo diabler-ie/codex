@@ -31,7 +31,13 @@ pub(super) fn activity_layout(
     let source_offset = (!lines.auxiliary.is_empty())
         .then(|| TextLayout::new(lines.activity.clone(), width).text().len());
     lines.activity.extend(lines.auxiliary);
-    let layout = TextLayout::new(lines.activity, width);
+    let mut layout = TextLayout::new(lines.activity, width);
+    layout.mcp_group = lines.disclosure == Some(ActivityDisclosure::McpCalls);
+    if !expanded && lines.disclosure == Some(ActivityDisclosure::McpCalls) {
+        // The whole summary is the disclosure target, keeping a collapsed run on one row.
+        layout.disclosure = true;
+        return layout;
+    }
     if !has_details {
         return layout;
     }
@@ -49,7 +55,9 @@ pub(super) fn activity_layout(
             }
             label
         }
-        (false, Some(ActivityDisclosure::Generic) | None) => "+ Show details".to_owned(),
+        (false, Some(ActivityDisclosure::Generic | ActivityDisclosure::McpCalls) | None) => {
+            "+ Show details".to_owned()
+        }
     };
     match source_offset {
         Some(offset) => layout.with_disclosure_control_at(label, offset),

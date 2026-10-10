@@ -10,13 +10,14 @@ use pretty_assertions::assert_eq;
 #[derive(Clone, Copy, Debug)]
 enum ActivityKind {
     Computer,
+    Mcp,
     Exploration,
 }
 
 fn call(id: &str, kind: ActivityKind, status: &str) -> ThreadItem {
     let value = match kind {
-        ActivityKind::Computer => serde_json::json!({
-            "type": "mcpToolCall", "id": id, "server": "cua_repl", "tool": "js",
+        ActivityKind::Computer | ActivityKind::Mcp => serde_json::json!({
+            "type": "mcpToolCall", "id": id, "server": if matches!(kind, ActivityKind::Computer) { "cua_repl" } else { "Brusher" }, "tool": "js",
             "status": status, "arguments": {"title": format!("Inspect {id}")},
             "result": {"content": [{"type": "text", "text": format!("Result {id}")}]},
             "durationMs": 10
@@ -66,11 +67,15 @@ fn project(app: &App, items: &[ThreadItem]) -> Vec<Arc<dyn HistoryCell>> {
 }
 
 #[tokio::test]
-async fn older_page_hydration_keeps_pending_computer_and_exploration_completion() {
-    for kind in [ActivityKind::Computer, ActivityKind::Exploration] {
+async fn older_page_hydration_keeps_pending_activity_completion() {
+    for kind in [
+        ActivityKind::Computer,
+        ActivityKind::Mcp,
+        ActivityKind::Exploration,
+    ] {
         let mut app = make_test_app().await;
         match kind {
-            ActivityKind::Computer => {
+            ActivityKind::Computer | ActivityKind::Mcp => {
                 app.chat_widget.handle_mcp_tool_call_completed_now(call(
                     "newer",
                     kind,
@@ -118,11 +123,9 @@ async fn older_page_hydration_keeps_pending_computer_and_exploration_completion(
             );
         }
         match kind {
-            ActivityKind::Computer => app.chat_widget.handle_mcp_tool_call_completed_now(call(
-                "pending",
-                kind,
-                "completed",
-            )),
+            ActivityKind::Computer | ActivityKind::Mcp => app
+                .chat_widget
+                .handle_mcp_tool_call_completed_now(call("pending", kind, "completed")),
             ActivityKind::Exploration => app
                 .chat_widget
                 .handle_command_execution_completed_now(call("pending", kind, "completed")),
@@ -141,7 +144,11 @@ async fn older_page_hydration_keeps_pending_computer_and_exploration_completion(
 
 #[tokio::test]
 async fn trailing_reasoning_identity_rejects_identical_text_from_another_turn() {
-    for kind in [ActivityKind::Computer, ActivityKind::Exploration] {
+    for kind in [
+        ActivityKind::Computer,
+        ActivityKind::Mcp,
+        ActivityKind::Exploration,
+    ] {
         let mut app = make_test_app().await;
         let mut same_turn = reasoning("same-turn-detail");
         let mut next_turn = reasoning("next-turn-detail");
@@ -186,7 +193,11 @@ async fn trailing_reasoning_identity_rejects_identical_text_from_another_turn() 
 
 #[tokio::test]
 async fn every_page_split_folds_reasoning_before_answer_and_completion_boundaries() {
-    for kind in [ActivityKind::Computer, ActivityKind::Exploration] {
+    for kind in [
+        ActivityKind::Computer,
+        ActivityKind::Mcp,
+        ActivityKind::Exploration,
+    ] {
         for answer in [None, Some("The answer")] {
             let mut app = make_test_app().await;
             let mut items = vec![call("call", kind, "completed"), reasoning("detail")];

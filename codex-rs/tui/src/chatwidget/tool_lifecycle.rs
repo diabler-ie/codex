@@ -202,12 +202,12 @@ impl ChatWidget {
             self.request_redraw();
             return;
         }
-        self.flush_active_cell();
-        self.transcript.active_cell = Some(Box::new(history_cell::new_active_mcp_tool_call(
+        let call = history_cell::new_active_mcp_tool_call(
             id,
             invocation,
             self.local_settings.tui.animations && self.local_settings.tui.effects.progress,
-        )));
+        );
+        self.update_mcp_activity(|cell| cell.start(call));
         self.bump_active_cell_revision();
         self.request_redraw();
     }
@@ -237,26 +237,48 @@ impl ChatWidget {
             return;
         }
 
-        match self
-            .transcript
-            .active_cell
-            .as_mut()
-            .and_then(|cell| cell.as_any_mut().downcast_mut::<McpToolCallCell>())
-        {
-            Some(cell) if cell.call_id() == id => cell.complete(duration, result),
-            _ => {
-                self.flush_active_cell();
-                let mut cell = history_cell::new_active_mcp_tool_call(
-                    id,
-                    invocation,
-                    self.local_settings.tui.animations && self.local_settings.tui.effects.progress,
-                );
-                cell.complete(duration, result);
-                self.transcript.active_cell = Some(Box::new(cell));
-            }
-        };
+        let call = history_cell::new_active_mcp_tool_call(
+            id,
+            invocation,
+            self.local_settings.tui.animations && self.local_settings.tui.effects.progress,
+        );
+        self.update_mcp_activity(|cell| cell.complete(call, duration, result));
+        self.bump_active_cell_revision();
+        self.request_redraw();
+    }
 
-        self.flush_active_cell();
+    fn update_mcp_activity(
+        &mut self,
+        update: impl FnOnce(&mut history_cell::McpToolCallGroupCell),
+    ) {
+        if let Some(cell) = self.transcript.active_cell.as_mut().and_then(|cell| {
+            cell.as_any_mut()
+                .downcast_mut::<history_cell::McpToolCallGroupCell>()
+        }) {
+            update(cell);
+        } else {
+            self.flush_active_cell();
+            let mut cell = history_cell::McpToolCallGroupCell::default();
+            update(&mut cell);
+            self.transcript.active_cell = Some(Box::new(cell));
+        }
+    }
+
+    pub(crate) fn prepend_active_mcp_history(
+        &mut self,
+        older: &dyn HistoryCell,
+        turns: &[Turn],
+    ) -> Option<(u64, u64)> {
+        let previous_revision = self.transcript.active_cell_revision;
+        let active = self.transcript.active_cell.as_mut().and_then(|cell| {
+            cell.as_any_mut()
+                .downcast_mut::<history_cell::McpToolCallGroupCell>()
+        })?;
+        active.prepend(crate::thread_transcript::older_mcp_group(
+            older, active, turns,
+        )?);
+        self.bump_active_cell_revision();
+        Some((previous_revision, self.transcript.active_cell_revision))
     }
 
     /// Preserve pending calls and timers, returning the revisions before and after hydration.

@@ -3,6 +3,7 @@
 use crate::exec_cell::ExecCell;
 use crate::history_cell::ComputerActivityCell;
 use crate::history_cell::HistoryCell;
+use crate::history_cell::McpToolCallGroupCell;
 use crate::history_cell::ReasoningSummaryCell;
 use std::sync::Arc;
 
@@ -26,6 +27,8 @@ pub(crate) fn fold_trailing_activity_details(
 ) -> Option<Arc<dyn HistoryCell>> {
     let (mut ids, retained) =
         if let Some(group) = older.as_any().downcast_ref::<ComputerActivityCell>() {
+            (group.call_ids().collect::<Vec<_>>(), &group.group.details)
+        } else if let Some(group) = older.as_any().downcast_ref::<McpToolCallGroupCell>() {
             (group.call_ids().collect::<Vec<_>>(), &group.group.details)
         } else {
             let group = older.as_any().downcast_ref::<ExecCell>()?;
@@ -55,6 +58,10 @@ pub(crate) fn fold_trailing_activity_details(
     }
     if older.as_any().is::<ComputerActivityCell>() {
         let mut group = super::computer_groups::completed_group(items)?;
+        group.group.details = retained;
+        Some(Arc::new(group))
+    } else if older.as_any().is::<McpToolCallGroupCell>() {
+        let mut group = super::mcp_groups::completed_group(items)?;
         group.group.details = retained;
         Some(Arc::new(group))
     } else {
